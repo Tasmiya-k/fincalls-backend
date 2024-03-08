@@ -1,0 +1,12 @@
+commands
+
+cd ~
+cd Desktop
+cd 'My Folder'
+cd 'Mini Project'
+cd 'TE Mini Project'
+cd democode
+
+python main.py tcl-q1-fy24-earnings-call-audio-clip.mp3
+
+python main.py 'Jack Dorsey_8_2.mp3'

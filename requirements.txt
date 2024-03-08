@@ -1,0 +1,8 @@
+Flask==3.0.2
+Flask_Cors==4.0.0
+flask_mongoengine==0.1
+Flask_PyMongo==2.3.0
+pymongo==4.6.1
+reportlab==4.1.0
+Requests==2.31.0
+transformers==4.37.2
