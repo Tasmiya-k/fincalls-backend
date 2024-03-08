@@ -15,6 +15,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 from io import BytesIO
 from summary import extract_financial_sentences, generate_pdf
+import PyPDF2
 
 
 from flask_pymongo import PyMongo
@@ -168,6 +169,7 @@ def gettranscipt():
 def getsummary():
     data = request.json
     transcript_file_id =  data.get('transcript_file_id')
+    pdf_file_id = data.get('pdf_file_id')
 
 
     if transcript_file_id:
@@ -197,9 +199,51 @@ def getsummary():
             return response
         else:
             return jsonify({"error": "Empty PDF content."})
-    else:
-        return jsonify({"error": "Transcript file ID is missing."})
+        
+    elif pdf_file_id:
+        # Fetch the PDF file from MongoDB using GridFS
+        pdf_file_gridfs = fs.get(ObjectId(pdf_file_id))
+        print("PDF file fetched from MongoDB:", pdf_file_gridfs.filename)
 
+        pdf_content = pdf_file_gridfs.read()
+
+        
+
+        # Extract text from the PDF file
+        extracted_text = extract_text_from_pdf(pdf_content)
+        print("Text extracted from PDF:", extracted_text)
+
+        all_financial_sentences = extract_financial_sentences(extracted_text)
+        print(all_financial_sentences)
+        
+        pdf_path = generate_pdf(tempfile.mktemp(suffix='.pdf'), [(1, all_financial_sentences)], "Company Name")
+        print("This is my received pdf_path: "+pdf_path)
+        # Store the PDF file in MongoDB
+        with open(pdf_path, 'rb') as pdf_file:
+            summary_id = fs.put(pdf_file, filename="summary.pdf")
+
+        with open(pdf_path, 'rb') as pdf_file:
+            pdf_content = pdf_file.read()
+
+        # Check if the PDF content is not empty
+        if pdf_content:
+            response = make_response(pdf_content)
+            response.headers["Content-Disposition"] = "attachment; filename=summary.pdf"
+            response.headers["Summary-ID"] = str(summary_id)
+            return response
+        else:
+            return jsonify({"error": "Empty PDF content."})
+
+    else:
+        return jsonify({"error": "Empty PDF summary content."})
+
+
+def extract_text_from_pdf(pdf_content):
+    pdf_reader = PyPDF2.PdfReader(BytesIO(pdf_content))
+    text = ""
+    for page_number in range(len(pdf_reader.pages)):
+        text += pdf_reader.pages[page_number].extract_text()
+    return text
 
 
 
