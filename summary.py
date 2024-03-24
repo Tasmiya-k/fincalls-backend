@@ -60,7 +60,7 @@ def generate_pdf(pdf_path, content, company_name):
     story = []
 
     # Add the specified heading with centered alignment
-    heading_text = f"{company_name} Transcript Summary"
+    heading_text = f"Transcript Summary"
     heading = Paragraph(heading_text, heading_style)
     story.append(heading)
     story.append(Spacer(1, 12))  # Add some space after heading
@@ -91,7 +91,7 @@ def generate_pdf(pdf_path, content, company_name):
 # Function to summarize financial content for each page and generate PDF
 def summarize_financial_pages_to_pdf(pdf_path, transcript):
     # Extract company name from the file name
-    company_name = os.path.splitext(os.path.basename(pdf_path_transcript))[0]
+    company_name = "Meta"
 
     # Extract and store declarative sentences containing financial keywords for the entire transcript
     all_financial_sentences = extract_financial_sentences(transcript)

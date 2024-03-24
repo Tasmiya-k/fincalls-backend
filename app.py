@@ -15,7 +15,14 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 from io import BytesIO
 from summary import extract_financial_sentences, generate_pdf
+from timeline import plot_graph,separate_and_highlight_tenses
 import PyPDF2
+from flask import render_template, request
+import spacy
+from termcolor import colored
+import matplotlib.pyplot as plt
+import io
+import base64
 
 
 from flask_pymongo import PyMongo
@@ -131,7 +138,7 @@ def gettranscipt():
     if transcript_file_id:
         # Fetch the transcript text from MongoDB using GridFS
         transcript_text = fs.get(ObjectId(transcript_file_id)).read().decode('utf-8')
-        print(transcript_text)
+       
         # Convert the transcript text to PDF
         pdf_filename = transcript_file_id + ".pdf"
         pdf_buffer = BytesIO()
@@ -182,7 +189,7 @@ def getsummary():
         all_financial_sentences = extract_financial_sentences(transcript_text)
         print(all_financial_sentences)
         
-        pdf_path = generate_pdf(tempfile.mktemp(suffix='.pdf'), [(1, all_financial_sentences)], "Company Name")
+        pdf_path = generate_pdf(tempfile.mktemp(suffix='.pdf'), [(1, all_financial_sentences)], "Meta")
         print("This is my received pdf_path: "+pdf_path)
         # Store the PDF file in MongoDB
         with open(pdf_path, 'rb') as pdf_file:
@@ -216,7 +223,7 @@ def getsummary():
         all_financial_sentences = extract_financial_sentences(extracted_text)
         print(all_financial_sentences)
         
-        pdf_path = generate_pdf(tempfile.mktemp(suffix='.pdf'), [(1, all_financial_sentences)], "Company Name")
+        pdf_path = generate_pdf(tempfile.mktemp(suffix='.pdf'), [(1, all_financial_sentences)], "Meta")
         print("This is my received pdf_path: "+pdf_path)
         # Store the PDF file in MongoDB
         with open(pdf_path, 'rb') as pdf_file:
@@ -246,12 +253,76 @@ def extract_text_from_pdf(pdf_content):
     return text
 
 
+@app.route('/timeline', methods=['POST'])
+def timeline():
+    # Receive data from the request
+    data = request.json
+    transcript_id = data.get('transcript_file_id')
+    pdf_id = data.get('pdf_file_id')
+    target_word = ''
 
-# audio_url = upload(filename)
-# transcript_id = transcribe(audio_url)
+    if transcript_id :
+        # Handle the case where only transcript_id is provided
+        # Fetch the transcript from the database
+        transcript_content = fs.get(ObjectId(transcript_id)).read().decode('utf-8')
 
-# print(transcript_id)
-# -------------------------------------------------------------------------------
+        # Perform any processing specific to transcript analysis
+        # For example, you can analyze the sentiment, extract keywords, etc.
+
+        # Prepare and return the response
+        # Analyze the text for tense distribution and highlighting
+        highlighted_past, percent_past, highlighted_present, percent_present, highlighted_future, percent_future = separate_and_highlight_tenses(transcript_content, target_word)
+
+        # Plot graph for tense distribution
+        plot_url = plot_graph(percent_past, percent_present, percent_future)
+
+        # Prepare and return the response
+        response_data = {
+            "highlighted_past": highlighted_past,
+            "percent_past": percent_past,
+            "highlighted_present": highlighted_present,
+            "percent_present": percent_present,
+            "highlighted_future": highlighted_future,
+            "percent_future": percent_future,
+            "plot_url": plot_url,
+            "pdf_id": pdf_id
+        }
+        return jsonify(response_data), 200
+
+    elif pdf_id :
+        # Handle the case where only pdf_id is provided
+        # Fetch the PDF from the database
+        pdf_content = fs.get(ObjectId(pdf_id)).read()
+
+        # Extract text from PDF
+        extracted_text = extract_text_from_pdf(pdf_content)
+
+        # Analyze the text for tense distribution and highlighting
+        highlighted_past, percent_past, highlighted_present, percent_present, highlighted_future, percent_future = separate_and_highlight_tenses(extracted_text, target_word)
+
+        # Plot graph for tense distribution
+        plot_url = plot_graph(percent_past, percent_present, percent_future)
+
+        # Prepare and return the response
+        response_data = {
+            "highlighted_past": highlighted_past,
+            "percent_past": percent_past,
+            "highlighted_present": highlighted_present,
+            "percent_present": percent_present,
+            "highlighted_future": highlighted_future,
+            "percent_future": percent_future,
+            "plot_url": plot_url,
+            "pdf_id": pdf_id
+        }
+        return jsonify(response_data), 200
+
+    else:
+        # Return an error if both transcript_id and pdf_id are missing or if both are provided
+        return jsonify({"error": "Exactly one of transcript_id or pdf_id must be provided."}), 400
+
+
+    
+
 
 def poll(transcript_id):
     # Poll - Keep polling the Assembly AI's API to see when the transcription is done
@@ -270,7 +341,7 @@ def get_transcription_result_url(audio_url):
             return data, None
         elif data['status']=="error":  
             return data, data['error']
-        print(data)
+        # print(data)
         
         print('The Earnings Call is under process...')
         time.sleep(30)
