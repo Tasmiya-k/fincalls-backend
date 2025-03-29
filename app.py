@@ -1,5 +1,5 @@
-
 import tempfile
+import re
 from bson import ObjectId
 from flask import Flask, make_response, request, jsonify, send_file
 from flask_cors import CORS 
@@ -8,26 +8,42 @@ from pymongo import MongoClient
 from api_secrets import API_KEY_ASSEMBLYAI
 import sys
 import time
+import threading
+from dotenv import load_dotenv
 from gridfs import GridFS
+import google.generativeai as genai
 import os
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.utils import simpleSplit
+from reportlab.lib.units import inch
+from reportlab.pdfgen import canvas
 from io import BytesIO
 from summary import extract_financial_sentences, generate_pdf
 from timeline import plot_graph,separate_and_highlight_tenses
 import PyPDF2
 from flask import render_template, request
+from flask import request
 import spacy
 from termcolor import colored
 import matplotlib.pyplot as plt
 import io
 import base64
+import mimetypes
+from io import BytesIO
 
 
 from flask_pymongo import PyMongo
 
 app = Flask(__name__)
+# Load environment variables
+load_dotenv()
+
+# Configure generative AI
+genai.configure(api_key=os.environ['GOOGLE_API_KEY'])
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 client = MongoClient('mongodb://localhost:27017/')
 db = client['FinCalls']
@@ -66,7 +82,6 @@ def upload(audio_file_id):
     audio_url = upload_response.json()['upload_url']
     return audio_url
 
-# -------------------------------------------------------------------------------
 
 # Transcribe
 def transcribe(audio_url):
@@ -77,13 +92,136 @@ def transcribe(audio_url):
     transcript_id = transcript_response.json()['id']
     return transcript_id
 
+def markdown_to_html(text):
+    """Convert markdown-style **bold** and *italic* to HTML-like formatting."""
+    text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)  # Convert **bold** to <b>bold</b>
+    text = re.sub(r'\s\*(.*?)\*\s', r' <i>\1</i> ', text)  # Ensure italics don't start with an extra *
+    text = re.sub(r'(?<!\S)\*(.*?)\*(?!\S)', r'<i>\1</i>', text)  # Handle *italic* at word boundaries properly
+    text = text.replace("\n* ", "\n  ◦ ")  # Convert "*" to a nested bullet point
+    text = re.sub(r'^\*+', '', text, flags=re.MULTILINE)  
+    return text.replace("\n", "<br/>")  # Preserve line breaks
+
+
+def generate_pdf(result):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+
+    elements = []
+
+    # Title
+    title = Paragraph("<b>Risk Assessment Report</b>", styles['Title'])
+    elements.append(title)
+    elements.append(Spacer(1, 0.3 * inch))
+
+    # Risk Analysis
+    risk_analysis_text = result.get('risk_analysis', 'No analysis provided.')
+    formatted_text = markdown_to_html(risk_analysis_text)
+    risk_analysis_paragraph = Paragraph(formatted_text.replace("\n", "<br/>"), styles['BodyText'])
+    elements.append(risk_analysis_paragraph)
+
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+
+
+def risk_analysis_task(audio_file_id):
+    """
+    Performs risk analysis on the given audio file and stores results in MongoDB.
+    """
+    try:
+        # Retrieve the audio file from MongoDB using GridFS
+        audio_file = fs.get(audio_file_id)
+        
+        # Read the file as bytes
+        audio_data = audio_file.read()
+
+        # Create a temporary file to store the audio data
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            tmp_file.write(audio_data)
+            tmp_file_path = tmp_file.name
+        
+        # Now upload the temporary file to genai
+        uploaded_file = genai.upload_file(tmp_file_path, mime_type="audio/mpeg")  # Set MIME type dynamically as necessary
+
+        question = '''Analyze the following transcript for tone, risks, and timestamps of key points:
+        Tasks:
+        1. Analyze the tone of the speaker. Determine if it is optimistic, pessimistic, neutral, or mixed, and highlight phrases that support your assessment.
+        2. Identify and categorize risks mentioned in the text (e.g., financial, operational, market, regulatory). Provide explanations for why these risks are significant and suggest possible mitigation strategies.
+        3. Use the provided timestamps to indicate when key tone shifts or risks are mentioned.
+
+        Provide the output in the following format:
+        - Tone Analysis:
+        - Overall Tone: <optimistic/pessimistic/neutral>
+        - Supporting Phrases: <list of key phrases>
+        - Explanation: <reasoning>
+
+        - Risk Analysis:
+        - Risk Type: <e.g., Financial Risk>
+        - Supporting Evidence: <sentence/phrase>
+        - Explanation: <reasoning>
+        - Suggested Mitigation: <recommendation>
+
+        - Timestamped Insights:
+        - Timestamp: <HH:MM:SS>
+            - Key Insight: <e.g., Shift to optimistic tone, Mention of financial risk>
+            - Supporting Evidence: <sentence/phrase>'''
+
+        # Generate content (you can change how this is handled depending on the model used)
+        response = model.generate_content([uploaded_file, question])
+
+        # Store the analysis result in MongoDB
+        result = {
+            "file_id": audio_file_id,
+            "risk_analysis": response.text
+        }
+        collection.insert_one(result)
+        print(f"Analysis stored in MongoDB for file_id: {audio_file_id}")
+        
+    except Exception as e:
+        print(f"Error during risk analysis: {str(e)}")
+    finally:
+        print("Risk analysis completed.")
+
+
+@app.route('/getrisk', methods=['POST'])
+def getrisk():
+    data = request.json
+    transcript_file_id = data.get('audio_file_id')
+    print(f"Analysis retreiving for risk: {transcript_file_id}")
+    try:
+        # Convert transcript_file_id to ObjectId
+        transcript_file_id = ObjectId("67ae01244cfe4c6436e0a7a8")
+    except Exception as e:
+        return f"Invalid file_id format: {e}", 400
+    # pdf_file_id = data.get('pdf_file_id')
+    result = collection.find_one({"file_id": transcript_file_id})
+    print("Result received:", result)
+    # Generate the PDF
+    pdf_buffer = generate_pdf(result)
+    SAVE_PATH = "generated_pdfs" 
+
+    # Define local filename
+    pdf_filename = os.path.join(SAVE_PATH, f"Risk_Assessment_{transcript_file_id}.pdf")
+
+        # Save PDF locally
+    with open(pdf_filename, "wb") as f:
+        f.write(pdf_buffer.getvalue())
+
+    print(f"[DEBUG] PDF saved successfully at {pdf_filename}")
+    
+
+    # Send the PDF as a response
+    return send_file(pdf_buffer, as_attachment=True, download_name="risk_analysis.pdf", mimetype='application/pdf')
 
 
 @app.route('/')
 def index():
     return 'Hello, this is the root path!'
 
-from flask import request
+
 
 @app.route('/upload_files', methods=['POST'])
 def upload_files():
@@ -93,9 +231,12 @@ def upload_files():
         if file:
             # Save the audio file to MongoDB using GridFS
             audio_file_id = fs.put(file, filename=file.filename)
+            audio_url = upload(audio_file_id)
+            analysis_thread = threading.Thread(target=risk_analysis_task, args=(audio_file_id,))
+            analysis_thread.start()
 
             # Upload the audio file to AssemblyAI and get the transcript
-            audio_url = upload(audio_file_id)
+            
             data, error = get_transcription_result_url(audio_url)
 
             if data:

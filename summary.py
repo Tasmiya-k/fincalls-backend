@@ -6,10 +6,10 @@ from transformers import BartTokenizer, BartForConditionalGeneration
 # from pdfminer.high_level import extract_text
 import os
 
-# Load pre-trained model and tokenizer
-model_name = "facebook/bart-large-cnn"
-tokenizer = BartTokenizer.from_pretrained(model_name)
-model = BartForConditionalGeneration.from_pretrained(model_name)
+# # Load pre-trained model and tokenizer
+# model_name = "facebook/bart-large-cnn"
+# tokenizer = BartTokenizer.from_pretrained(model_name)
+# model = BartForConditionalGeneration.from_pretrained(model_name)
 
 # Function to check if a sentence is declarative
 def is_declarative(sentence):
