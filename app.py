@@ -16,10 +16,11 @@ import os
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import simpleSplit
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
+from reportlab.platypus import Table, TableStyle
+from reportlab.lib import colors
 from io import BytesIO
 from summary import extract_financial_sentences, generate_pdf
 from timeline import plot_graph,separate_and_highlight_tenses
@@ -33,6 +34,9 @@ import io
 import base64
 import mimetypes
 from io import BytesIO
+import pandas as pd
+from tables import parse_tone_analysis, parse_risk_analysis, parse_timestamped_insights,create_timestamped_insights_table,create_tone_analysis_table,create_risk_analysis_table
+
 
 
 from flask_pymongo import PyMongo
@@ -103,28 +107,32 @@ def markdown_to_html(text):
 
 
 def generate_pdf(result):
+    """
+    Generates a structured PDF from parsed risk analysis data.
+    """
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
+    elements = []
     styles = getSampleStyleSheet()
 
-    elements = []
+    # Add Title
+    elements.append(Paragraph("Risk Analysis Report", styles["Title"]))
+    elements.append(Spacer(1, 0.25 * inch))
 
-    # Title
-    title = Paragraph("<b>Risk Assessment Report</b>", styles['Title'])
-    elements.append(title)
-    elements.append(Spacer(1, 0.3 * inch))
+    # Extract and parse analysis data
+    analysis_text = result.get("risk_analysis", "No analysis available.")
+    tone_data = parse_tone_analysis(analysis_text)
+    risk_data = parse_risk_analysis(analysis_text)
+    timestamp_data = parse_timestamped_insights(analysis_text)
 
-    # Risk Analysis
-    risk_analysis_text = result.get('risk_analysis', 'No analysis provided.')
-    formatted_text = markdown_to_html(risk_analysis_text)
-    risk_analysis_paragraph = Paragraph(formatted_text.replace("\n", "<br/>"), styles['BodyText'])
-    elements.append(risk_analysis_paragraph)
-
+    create_tone_analysis_table(tone_data, elements)
+    create_risk_analysis_table(risk_data, elements)
+    create_timestamped_insights_table(elements,timestamp_data)
+    
     # Build PDF
     doc.build(elements)
     buffer.seek(0)
     return buffer
-
 
 
 def risk_analysis_task(audio_file_id):
@@ -193,7 +201,7 @@ def getrisk():
     print(f"Analysis retreiving for risk: {transcript_file_id}")
     try:
         # Convert transcript_file_id to ObjectId
-        transcript_file_id = ObjectId("67ae01244cfe4c6436e0a7a8")
+        transcript_file_id = ObjectId(transcript_file_id)
     except Exception as e:
         return f"Invalid file_id format: {e}", 400
     # pdf_file_id = data.get('pdf_file_id')
