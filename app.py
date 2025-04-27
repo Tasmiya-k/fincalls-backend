@@ -35,7 +35,7 @@ import base64
 import mimetypes
 from io import BytesIO
 import pandas as pd
-from tables import parse_tone_analysis, parse_risk_analysis, parse_timestamped_insights,create_timestamped_insights_table,create_tone_analysis_table,create_risk_analysis_table
+from tables import parse_tone_analysis, parse_risk_analysis, parse_timestamped_insights,create_timestamped_insights_table,create_tone_analysis_table,create_risk_analysis_table, parse_strengths_opportunities, create_strengths_opportunities_table
 
 
 
@@ -124,10 +124,12 @@ def generate_pdf(result):
     tone_data = parse_tone_analysis(analysis_text)
     risk_data = parse_risk_analysis(analysis_text)
     timestamp_data = parse_timestamped_insights(analysis_text)
+    strengths_data = parse_strengths_opportunities(analysis_text)
 
     create_tone_analysis_table(tone_data, elements)
     create_risk_analysis_table(risk_data, elements)
     create_timestamped_insights_table(elements,timestamp_data)
+    create_strengths_opportunities_table(strengths_data, elements)
     
     # Build PDF
     doc.build(elements)
@@ -175,7 +177,23 @@ def risk_analysis_task(audio_file_id):
         - Timestamped Insights:
         - Timestamp: <HH:MM:SS>
             - Key Insight: <e.g., Shift to optimistic tone, Mention of financial risk>
-            - Supporting Evidence: <sentence/phrase>'''
+            - Supporting Evidence: <sentence/phrase>
+
+        **Task 2: Strengths and Opportunities**
+
+        Based on the transcript, identify the strengths and opportunities of the company.
+
+        - Focus on aspects like Financial Performance, Innovation, Market Position, ESG, Operational Excellence, etc.
+        - For each strength or opportunity:
+            - Category: <e.g., Innovation>
+            - Positive Indicator: <e.g., "Launched a new AI-driven product suite">
+            - Strategic Impact: <e.g., Strengthens competitive advantage and tech leadership>
+
+        Format:
+        - Category: <...>
+            - Positive Indicator: <...>
+            - Strategic Impact: <...>    
+        '''
 
         # Generate content (you can change how this is handled depending on the model used)
         response = model.generate_content([uploaded_file, question])
@@ -209,6 +227,8 @@ def getrisk():
     print("Result received:", result)
     # Generate the PDF
     pdf_buffer = generate_pdf(result)
+     # Reset buffer position to the beginning before sending
+    pdf_buffer.seek(0)
     SAVE_PATH = "generated_pdfs" 
 
     # Define local filename
