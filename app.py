@@ -49,7 +49,10 @@ load_dotenv()
 genai.configure(api_key=os.environ['GOOGLE_API_KEY'])
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-client = MongoClient('mongodb+srv://tas:tas@cluster0.48dztwi.mongodb.net/')
+
+mongo_uri = os.getenv("MONGO_URI")  # Get connection string from environment
+client = MongoClient(mongo_uri)
+
 db = client['FinCalls']
 collection = db['fincalls']
 fs = GridFS(db)
