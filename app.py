@@ -22,7 +22,7 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 from io import BytesIO
-from summary import extract_financial_sentences, generate_pdf
+from summary import extract_financial_sentences, generate_pdf as generate_summary_pdf
 from timeline import plot_graph,separate_and_highlight_tenses
 import PyPDF2
 from flask import render_template, request
@@ -49,7 +49,7 @@ load_dotenv()
 genai.configure(api_key=os.environ['GOOGLE_API_KEY'])
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-client = MongoClient('mongodb://localhost:27017/')
+client = MongoClient('mongodb+srv://tas:tas@cluster0.48dztwi.mongodb.net/')
 db = client['FinCalls']
 collection = db['fincalls']
 fs = GridFS(db)
@@ -358,7 +358,7 @@ def getsummary():
         all_financial_sentences = extract_financial_sentences(transcript_text)
         print(all_financial_sentences)
         
-        pdf_path = generate_pdf(tempfile.mktemp(suffix='.pdf'), [(1, all_financial_sentences)], "Meta")
+        pdf_path = generate_summary_pdf(tempfile.mktemp(suffix='.pdf'), [(1, all_financial_sentences)], "Accenture")
         print("This is my received pdf_path: "+pdf_path)
         # Store the PDF file in MongoDB
         with open(pdf_path, 'rb') as pdf_file:
